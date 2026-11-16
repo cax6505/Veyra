@@ -1,28 +1,53 @@
 sequenceDiagram
- actor Customer
- participant UI as Wallet UI
- participant API as Express API
- participant S as TransferService
- participant R as Validation chain
- participant P as Payment strategy
- participant DB as Store and ledger
- participant N as NotificationBus
- Customer->>UI: Enter transfer details
- UI->>API: POST /transfers + Idempotency-Key
- API->>S: send(request,key)
- S->>DB: Lock wallet; lookup key
- alt existing key
-  DB-->>S: Original transfer
-  S-->>UI: Original result, no second debit
- else new transfer
-  S->>R: Validate input, risk, cap, balance
-  R-->>S: Accepted
-  S->>DB: Create INITIATED
-  S->>S: Transition PROCESSING
-  S->>P: Authorize
-  P->>DB: Debit wallet when wallet funded
-  S->>DB: Append immutable ledger entry
-  S->>S: Transition SUCCESS
-  S->>N: Notify customer
-  S-->>UI: Transfer id and status
- end
+  actor Customer
+  participant UI as React wallet UI
+  participant API as Express API
+  participant S as TransferService
+  participant Store as LocalStore
+  participant Rules as Validation chain
+  participant Factory as PaymentFactory
+  participant Strategy as PaymentStrategy
+  participant Notify as NotificationBus
+
+  Customer->>UI: Enter recipient, amount, note, and source
+  UI->>API: POST /api/transfers + Idempotency-Key
+  API->>S: send(request, key)
+  S->>Store: Lock sender wallet
+  S->>Store: Find sender-scoped key and request hash
+  alt Key exists, same request
+    Store-->>S: Existing transfer
+    S-->>API: Existing result, no second debit
+    API-->>UI: Transfer id and status
+  else Key exists, changed request
+    Store-->>S: Existing request hash differs
+    S-->>API: IDEMPOTENCY_KEY_REUSED (409)
+    API-->>UI: Typed error
+  else New request
+    S->>Rules: Validate input, fraud, daily limit, balance
+    alt Rule rejects request
+      Rules-->>S: DomainError
+      S-->>API: Typed 4xx error; no transfer/debit
+      API-->>UI: Show actionable error
+    else Rules pass
+      S->>Store: Save INITIATED transfer
+      S->>Store: Transition to PROCESSING
+      S->>Factory: Select strategy by source
+      Factory-->>S: PaymentStrategy
+      S->>Strategy: authorize(request)
+      alt Wallet source
+        Strategy->>Store: Deduct paise and append DEBIT entry
+        Store-->>Strategy: Debit recorded
+        Strategy-->>S: Authorized
+        S->>Store: Transition to SUCCESS
+        S->>Notify: Notify sender
+        S-->>API: Transfer result
+        API-->>UI: Success response
+      else Bank/card source (demo)
+        Strategy-->>S: PAYMENT_RAIL_UNAVAILABLE
+        S->>Store: Transition to FAILED
+        S-->>API: Typed 422 error
+        API-->>UI: Explain unsupported payout rail
+      end
+    end
+  end
+  S->>Store: Release sender wallet lock

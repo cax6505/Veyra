@@ -1,38 +1,187 @@
 classDiagram
- class User{+id +fullName +email}
- class Wallet{+id +currency +balanceMinor +dailyLimitMinor +debit() +credit()}
- class PaymentMethod{+id +kind +displayLabel +isDefault}
- class Transfer{+id +recipient +amountMinor +status +idempotencyKey +transition()}
- class LedgerEntry{+id +amountMinor +direction +createdAt}
- class TransferService{+send(request,key)}
- class TransferRule{<<interface>> +check(request) +next(rule)}
- class Rule{<<abstract>> +check(request)}
- class InputRule
- class FraudRule
- class DailyLimitRule
- class BalanceRule
- class PaymentStrategy{<<interface>> +authorize(request)}
- class WalletPayment
- class ExternalPayment
- class PaymentFactory{+for(source)}
- class Notifier{<<interface>> +notify(user,message)}
- class NotificationBus{+attach(observer) +notify()}
- class LocalStore
- class State{+move(old,next)}
- User "1" *-- "1..*" Wallet : composition
- User "1" o-- "0..*" PaymentMethod : aggregation
- Wallet "1" --> "0..*" Transfer : sends
- Transfer "1" *-- "0..*" LedgerEntry : records
- TransferService --> PaymentFactory
- TransferService --> State
- TransferService --> Notifier
- TransferRule <|.. Rule
- Rule <|-- InputRule
- Rule <|-- FraudRule
- Rule <|-- DailyLimitRule
- Rule <|-- BalanceRule
- PaymentStrategy <|.. WalletPayment
- PaymentStrategy <|.. ExternalPayment
- PaymentFactory ..> PaymentStrategy : creates/selects
- Notifier <|.. NotificationBus
- TransferService --> LocalStore
+  class Request {
+    +senderId: string
+    +recipient: string
+    +amount: number
+    +note?: string
+    +source: Source
+    +transferId?: string
+  }
+  class Transfer {
+    +id: string
+    +key: string
+    +requestHash: string
+    +status: Status
+    +createdAt: Date
+  }
+  class Entry {
+    +id: string
+    +walletId: string
+    +referenceId: string
+    +amountMinor: number
+    +direction: Direction
+    +createdAt: Date
+  }
+  class Source {
+    <<type>>
+    WALLET
+    BANK
+    CARD
+  }
+  class Status {
+    <<type>>
+    INITIATED
+    PROCESSING
+    SUCCESS
+    FAILED
+    REFUNDED
+  }
+  class Direction {
+    <<type>>
+    DEBIT
+    CREDIT
+  }
+  class TransferService {
+    -store: LocalStore
+    -factory: PaymentFactory
+    -notifier: Notifier
+    -rules: TransferRule
+    +constructor(store: LocalStore, factory: PaymentFactory, notifier: Notifier)
+    +send(request: Request, key: string) Promise~Transfer~
+    -complete(request: Request, transfer: Transfer) Promise~Transfer~
+  }
+  class TransferRule {
+    <<interface>>
+    +check(request: Request) Promise~void~
+    +next(rule: TransferRule) TransferRule
+  }
+  class Rule {
+    <<abstract>>
+    -following: TransferRule
+    +check(request: Request) Promise~void~
+    #validate(request: Request) Promise~void~
+    +next(rule: TransferRule) TransferRule
+  }
+  class InputRule {
+    #validate(request: Request) Promise~void~
+  }
+  class FraudRule {
+    #validate(request: Request) Promise~void~
+  }
+  class DailyLimitRule {
+    -total: Function
+    +constructor(total: Function)
+    #validate(request: Request) Promise~void~
+  }
+  class BalanceRule {
+    -store: LocalStore
+    +constructor(store: LocalStore)
+    #validate(request: Request) Promise~void~
+  }
+  class PaymentStrategy {
+    <<interface>>
+    +source: Source
+    +authorize(request: Request) Promise~void~
+  }
+  class WalletPayment {
+    -store: LocalStore
+    +constructor(store: LocalStore)
+    +authorize(request: Request) Promise~void~
+  }
+  class ExternalPayment {
+    +source: Source
+    +constructor(source: Source)
+    +authorize(request: Request) Promise~void~
+  }
+  class PaymentFactory {
+    -strategies: PaymentStrategy[]
+    +constructor(strategies: PaymentStrategy[])
+    +for(source: Source) PaymentStrategy
+  }
+  class Notifier {
+    <<interface>>
+    +notify(user: string, message: string) Promise~void~
+  }
+  class NotificationBus {
+    -observers: Notifier[]
+    +constructor(observers: Notifier[])
+    +attach(observer: Notifier) void
+    +notify(user: string, message: string) Promise~void~
+  }
+  class ConsoleNotifier {
+    +notify(user: string, message: string) Promise~void~
+  }
+  class LoggingDecorator {
+    -wrapped: PaymentStrategy
+    +source: Source
+    +constructor(wrapped: PaymentStrategy)
+    +authorize(request: Request) Promise~void~
+  }
+  class LocalStore {
+    +constructor()
+    +entries: readonly Entry[]
+    +transfers: Map
+    +balances: Map
+    +topups: Map
+    -ledger: Entry[]
+    -idempotency: Map
+    -locks: Map
+    -file: string
+    +lock(id: string, operation) Promise~T~
+    +balance(id: string) Promise~number~
+    +find(key: string) Promise~Transfer~
+    +save(transfer: Transfer) Promise~void~
+    +updateStatus(id: string, next: Status) Promise~void~
+    +hasLedgerEntry(referenceId, direction) boolean
+    +recordDebit(walletId, amountMinor, transferId) Promise~void~
+    +append(entry: Entry) Promise~void~
+    +daily(userId: string) Promise~number~
+    +register(orderId, amount) Promise~void~
+    +settle(orderId, paymentId) Promise~object~
+    -load() void
+    -persist() void
+  }
+  class State {
+    -transitions: Record~Status, Status[]~
+    +move(current: Status, next: Status) Status
+  }
+  class DomainError {
+    +code: string
+    +httpStatus: number
+    +constructor(code: string, message: string, httpStatus?: number)
+  }
+  class RazorpayOrderBuilder {
+    -data: object
+    +amount(value: number) RazorpayOrderBuilder
+    +receipt(value: string) RazorpayOrderBuilder
+    +wallet(value: string) RazorpayOrderBuilder
+    +build() object
+  }
+
+  TransferRule <|.. Rule
+  Rule <|-- InputRule
+  Rule <|-- FraudRule
+  Rule <|-- DailyLimitRule
+  Rule <|-- BalanceRule
+  PaymentStrategy <|.. WalletPayment
+  PaymentStrategy <|.. ExternalPayment
+  PaymentStrategy <|.. LoggingDecorator
+  Notifier <|.. NotificationBus
+  Notifier <|.. ConsoleNotifier
+  Rule "1" --> "0..1" TransferRule : next rule
+  LoggingDecorator "1" o--> "1" PaymentStrategy : wraps
+  NotificationBus "1" o--> "0..*" Notifier : observers
+  PaymentFactory "1" o--> "0..*" PaymentStrategy : selects
+  TransferService "1" --> "1" LocalStore : uses
+  TransferService "1" --> "1" PaymentFactory : selects strategy
+  TransferService "1" --> "1" TransferRule : chain head
+  TransferService "1" --> "1" Notifier : publishes result
+  TransferService ..> State : transitions
+  LocalStore ..> State : validates transitions
+  LocalStore "1" o-- "0..*" Transfer : stores
+  LocalStore "1" *-- "0..*" Entry : ledger records
+  Transfer --> Source
+  Transfer --> Status
+  Entry --> Direction
+  Request --> Source
+  DomainError --|> Error

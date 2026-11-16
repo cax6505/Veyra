@@ -1,19 +1,28 @@
 sequenceDiagram
- actor Customer
- participant UI
- participant API
- participant RP as Razorpay
- participant Store
- Customer->>UI: Choose amount
- UI->>API: POST /razorpay/orders
- API->>API: Validate and build INR order
- API->>RP: Create order with server secret
- RP-->>API: Order id, amount, currency
- API->>Store: Register pending order
- API-->>UI: Order and public key id
- UI->>RP: Open hosted checkout
- RP-->>UI: Payment id and signature
- UI->>API: POST /razorpay/verify
- API->>API: Verify HMAC and captured payment
- API->>Store: Credit once and append ledger entry
- API-->>UI: Verified balance
+  actor Customer
+  participant UI as React wallet UI
+  participant API as Express API
+  participant RP as Razorpay API / Checkout
+  participant Store as LocalStore
+
+  Customer->>UI: Choose top-up amount in rupees
+  UI->>API: POST /api/razorpay/orders {amount}
+  API->>API: Validate ₹100–₹1,00,000; convert to paise
+  API->>RP: Create order using server secret
+  RP-->>API: order id, amount, currency
+  API->>Store: Register uncredited order
+  API-->>UI: order id, amount, currency, public key id
+  UI->>RP: Open hosted Checkout
+  RP-->>UI: order id, payment id, signature
+  UI->>API: POST /api/razorpay/verify
+  API->>API: Verify HMAC signature
+  API->>RP: Fetch payment
+  RP-->>API: Payment status and captured details
+  API->>API: Check captured, INR, order and amount match
+  alt Valid and captured
+    API->>Store: Settle once under wallet lock
+    Store->>Store: Credit wallet and append CREDIT ledger entry
+    API-->>UI: Verified balance in paise
+  else Missing config or invalid/unsettled payment
+    API-->>UI: Typed error; wallet remains unchanged
+  end

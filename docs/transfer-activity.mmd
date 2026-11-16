@@ -1,20 +1,22 @@
 flowchart TD
- A([Start])-->B[Enter recipient, amount and source]
- B-->C{Input valid?}
- C--no-->B
- C--yes-->D[Send request with idempotency key]
- D-->E{Key already exists?}
- E--yes-->R[Return original transfer]
- E--no-->F[Lock wallet and run validation chain]
- F-->G{Rules pass?}
- G--no-->X[Typed error; no debit]
- G--yes-->H[Create INITIATED then PROCESSING]
- H-->I[Authorize payment strategy]
- I-->J{Authorized?}
- J--no-->K[FAILED; reconcile or refund]
- J--yes-->L[Append ledger entry]
- L-->M[SUCCESS and notify]
- R-->Z([Show result])
- X-->Z
- K-->Z
- M-->Z
+  A([Start]) --> B[Enter recipient, whole-rupee amount, and source]
+  B --> C{Client input valid?}
+  C -- No --> B
+  C -- Yes --> D[POST transfer with idempotency key]
+  D --> E[Acquire per-wallet process lock]
+  E --> F{Key already stored?}
+  F -- Same request --> G[Return original result]
+  F -- Different request --> H[409 key reuse error]
+  F -- New key --> I[Run input, fraud, daily-limit, and balance rules]
+  I --> J{Rules pass?}
+  J -- No --> K[Return typed error; do not debit]
+  J -- Yes --> L[Persist INITIATED then PROCESSING]
+  L --> M{Selected source}
+  M -- Wallet --> N[Debit balance and append DEBIT ledger entry]
+  N --> O[Set SUCCESS and notify]
+  M -- Bank or card --> P[Set FAILED; return rail unavailable]
+  G --> Q([Show transfer result])
+  H --> Q
+  K --> Q
+  O --> Q
+  P --> Q
