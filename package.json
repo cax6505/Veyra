@@ -1,0 +1,14 @@
+{
+  "name": "veyra-wallet",
+  "private": true,
+  "workspaces": [
+    "web",
+    "server"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace web",
+    "dev:server": "npm run dev --workspace server",
+    "build": "npm run build --workspace web && npm run build --workspace server",
+    "format": "prettier --write \"web/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\" web/vite.config.ts"
+  }
+}

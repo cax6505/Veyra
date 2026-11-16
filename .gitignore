@@ -1,0 +1,7 @@
+node_modules/
+web/dist/
+server/dist/
+server/.env
+server/data/state.json
+server/data/state.json.tmp
+*.tsbuildinfo

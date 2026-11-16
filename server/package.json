@@ -1,0 +1,1 @@
+{"name":"@veyra/server","version":"1.0.0","type":"module","scripts":{"dev":"tsx watch src/index.ts","build":"tsc --noEmit"},"dependencies":{"cors":"latest","dotenv":"latest","express":"latest","razorpay":"^2.9.6"},"devDependencies":{"@types/cors":"latest","@types/express":"latest","@types/node":"latest","tsx":"latest","typescript":"latest"}}

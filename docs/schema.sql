@@ -1,0 +1,16 @@
+CREATE TYPE payment_source AS ENUM ('WALLET','BANK','CARD');
+CREATE TYPE transfer_status AS ENUM ('INITIATED','PROCESSING','SUCCESS','FAILED','REFUNDED');
+CREATE TYPE ledger_direction AS ENUM ('DEBIT','CREDIT');
+CREATE TABLE app_user(id UUID PRIMARY KEY,full_name TEXT NOT NULL,email TEXT UNIQUE,phone_e164 TEXT UNIQUE,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE wallet(id UUID PRIMARY KEY,owner_id UUID NOT NULL REFERENCES app_user(id),currency CHAR(3) NOT NULL DEFAULT 'INR',balance_minor BIGINT NOT NULL DEFAULT 0 CHECK(balance_minor>=0),daily_limit_minor BIGINT NOT NULL DEFAULT 10000000,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(owner_id,currency));
+CREATE TABLE payment_method(id UUID PRIMARY KEY,owner_id UUID NOT NULL REFERENCES app_user(id),kind payment_source NOT NULL,provider TEXT NOT NULL,provider_token TEXT,display_label TEXT NOT NULL,is_default BOOLEAN NOT NULL DEFAULT false,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE transfer(id UUID PRIMARY KEY,sender_wallet_id UUID NOT NULL REFERENCES wallet(id),recipient_vpa TEXT NOT NULL,amount_minor BIGINT NOT NULL CHECK(amount_minor>0),currency CHAR(3) NOT NULL DEFAULT 'INR',source payment_source NOT NULL,status transfer_status NOT NULL,idempotency_key TEXT NOT NULL,provider_reference TEXT,note TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(sender_wallet_id,idempotency_key));
+CREATE INDEX transfer_sender_history ON transfer(sender_wallet_id,created_at DESC);
+CREATE INDEX transfer_reconcile ON transfer(status,updated_at) WHERE status IN('INITIATED','PROCESSING');
+CREATE TABLE razorpay_order(order_id TEXT PRIMARY KEY,wallet_id UUID NOT NULL REFERENCES wallet(id),amount_minor BIGINT NOT NULL CHECK(amount_minor>0),payment_id TEXT UNIQUE,status TEXT NOT NULL CHECK(status IN('CREATED','AUTHORIZED','CAPTURED','FAILED')),created_at TIMESTAMPTZ NOT NULL DEFAULT now(),captured_at TIMESTAMPTZ);
+CREATE TABLE ledger_entry(id UUID PRIMARY KEY,wallet_id UUID NOT NULL REFERENCES wallet(id),transfer_id UUID REFERENCES transfer(id),razorpay_order_id TEXT REFERENCES razorpay_order(order_id),amount_minor BIGINT NOT NULL CHECK(amount_minor>0),direction ledger_direction NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),CHECK((transfer_id IS NOT NULL)::int+(razorpay_order_id IS NOT NULL)::int=1));
+CREATE INDEX ledger_wallet_history ON ledger_entry(wallet_id,created_at DESC);
+CREATE UNIQUE INDEX ledger_transfer_direction ON ledger_entry(transfer_id,direction) WHERE transfer_id IS NOT NULL;
+CREATE UNIQUE INDEX ledger_topup_direction ON ledger_entry(razorpay_order_id,direction) WHERE razorpay_order_id IS NOT NULL;
+CREATE TABLE notification_outbox(id UUID PRIMARY KEY,user_id UUID NOT NULL REFERENCES app_user(id),transfer_id UUID REFERENCES transfer(id),channel TEXT NOT NULL CHECK(channel IN('SMS','PUSH','EMAIL')),payload JSONB NOT NULL,sent_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX notification_pending ON notification_outbox(created_at) WHERE sent_at IS NULL;

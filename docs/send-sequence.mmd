@@ -1,0 +1,28 @@
+sequenceDiagram
+ actor Customer
+ participant UI as Wallet UI
+ participant API as Express API
+ participant S as TransferService
+ participant R as Validation chain
+ participant P as Payment strategy
+ participant DB as Store and ledger
+ participant N as NotificationBus
+ Customer->>UI: Enter transfer details
+ UI->>API: POST /transfers + Idempotency-Key
+ API->>S: send(request,key)
+ S->>DB: Lock wallet; lookup key
+ alt existing key
+  DB-->>S: Original transfer
+  S-->>UI: Original result, no second debit
+ else new transfer
+  S->>R: Validate input, risk, cap, balance
+  R-->>S: Accepted
+  S->>DB: Create INITIATED
+  S->>S: Transition PROCESSING
+  S->>P: Authorize
+  P->>DB: Debit wallet when wallet funded
+  S->>DB: Append immutable ledger entry
+  S->>S: Transition SUCCESS
+  S->>N: Notify customer
+  S-->>UI: Transfer id and status
+ end

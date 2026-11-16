@@ -1,0 +1,19 @@
+sequenceDiagram
+ actor Customer
+ participant UI
+ participant API
+ participant RP as Razorpay
+ participant Store
+ Customer->>UI: Choose amount
+ UI->>API: POST /razorpay/orders
+ API->>API: Validate and build INR order
+ API->>RP: Create order with server secret
+ RP-->>API: Order id, amount, currency
+ API->>Store: Register pending order
+ API-->>UI: Order and public key id
+ UI->>RP: Open hosted checkout
+ RP-->>UI: Payment id and signature
+ UI->>API: POST /razorpay/verify
+ API->>API: Verify HMAC and captured payment
+ API->>Store: Credit once and append ledger entry
+ API-->>UI: Verified balance

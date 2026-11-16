@@ -1,0 +1,38 @@
+classDiagram
+ class User{+id +fullName +email}
+ class Wallet{+id +currency +balanceMinor +dailyLimitMinor +debit() +credit()}
+ class PaymentMethod{+id +kind +displayLabel +isDefault}
+ class Transfer{+id +recipient +amountMinor +status +idempotencyKey +transition()}
+ class LedgerEntry{+id +amountMinor +direction +createdAt}
+ class TransferService{+send(request,key)}
+ class TransferRule{<<interface>> +check(request) +next(rule)}
+ class Rule{<<abstract>> +check(request)}
+ class InputRule
+ class FraudRule
+ class DailyLimitRule
+ class BalanceRule
+ class PaymentStrategy{<<interface>> +authorize(request)}
+ class WalletPayment
+ class ExternalPayment
+ class PaymentFactory{+for(source)}
+ class Notifier{<<interface>> +notify(user,message)}
+ class NotificationBus{+attach(observer) +notify()}
+ class LocalStore
+ class State{+move(old,next)}
+ User "1" *-- "1..*" Wallet : composition
+ User "1" o-- "0..*" PaymentMethod : aggregation
+ Wallet "1" --> "0..*" Transfer : sends
+ Transfer "1" *-- "0..*" LedgerEntry : records
+ TransferService --> PaymentFactory
+ TransferService --> State
+ TransferService --> Notifier
+ TransferRule <|.. Rule
+ Rule <|-- InputRule
+ Rule <|-- FraudRule
+ Rule <|-- DailyLimitRule
+ Rule <|-- BalanceRule
+ PaymentStrategy <|.. WalletPayment
+ PaymentStrategy <|.. ExternalPayment
+ PaymentFactory ..> PaymentStrategy : creates/selects
+ Notifier <|.. NotificationBus
+ TransferService --> LocalStore
